@@ -101,18 +101,61 @@ if uploaded_file:
         lower_limit = float(np.percentile(values, lower_percentile_input))
         upper_limit = float(np.percentile(values, upper_percentile_input))
     else:
-        lower_limit = st.number_input(
+        # Initialize session state for lower and upper limits if not already present
+        if 'lower_limit_value' not in st.session_state:
+            st.session_state['lower_limit_value'] = default_lower_value
+        if 'upper_limit_value' not in st.session_state:
+            st.session_state['upper_limit_value'] = default_upper_value
+        if 'lower_limit_percentile' not in st.session_state:
+            st.session_state['lower_limit_percentile'] = default_lower_percentile # Placeholder, calculate if needed
+        if 'upper_limit_percentile' not in st.session_state:
+            st.session_state['upper_limit_percentile'] = default_upper_percentile # Placeholder, calculate if needed
+
+
+        def get_percentile_label(value, original_values):
+            percentile_rank = np.sum(original_values <= value) / len(original_values) * 100
+            return f"{value:.2f} ({percentile_rank:.0f} percentile)"
+
+        def calculate_percentile_value(value, original_values):
+            return np.sum(original_values <= value) / len(original_values) * 100
+
+        lower_limit_value = st.number_input(
             "Lower Truncation Limit",
             min_value=float(values.min()),
             max_value=float(values.max()),
-            value=default_lower_value
+            value=st.session_state['lower_limit_value'],
+            on_change=None, # Remove on_change to handle enter directly
         )
-        upper_limit = st.number_input(
+
+        upper_limit_value = st.number_input(
             "Upper Truncation Limit",
             min_value=float(values.min()),
             max_value=float(values.max()),
-            value=default_upper_value
+            value=st.session_state['upper_limit_value'],
+            on_change=None, # Remove on_change to handle enter directly
         )
+
+        if lower_limit_value != st.session_state['lower_limit_value']:
+            st.session_state['lower_limit_value'] = lower_limit_value
+            st.session_state['lower_limit_percentile'] = calculate_percentile_value(lower_limit_value, values)
+
+        if upper_limit_value != st.session_state['upper_limit_value']:
+            st.session_state['upper_limit_value'] = upper_limit_value
+            st.session_state['upper_limit_percentile'] = calculate_percentile_value(upper_limit_value, values)
+
+
+        lower_limit_label = "Lower Truncation Limit"
+        if 'lower_limit_percentile' in st.session_state:
+            lower_limit_label = f"Lower Truncation Limit: {st.session_state['lower_limit_value']:.2f} ({st.session_state['lower_limit_percentile']:.0f} percentile)"
+
+        upper_limit_label = "Upper Truncation Limit"
+        if 'upper_limit_percentile' in st.session_state:
+            upper_limit_label = f"Upper Truncation Limit: {st.session_state['upper_limit_value']:.2f} ({st.session_state['upper_limit_percentile']:.0f} percentile)"
+
+
+        lower_limit = st.session_state['lower_limit_value']
+        upper_limit = st.session_state['upper_limit_value']
+
 
     # Tạo hai histogram: Original và Truncated
     # Histogram 1: Dữ liệu gốc (Original)
@@ -184,9 +227,9 @@ if uploaded_file:
     # Dùng mean_custom, std_dev_custom để tính UCL, LCL tùy thuộc option
     if approach == "Manual":
         ucl_input = st.sidebar.number_input("Upper Control Limit (UCL)",
-                 value=mean_custom + 2.0 * std_dev_custom)
+                            value=mean_custom + 2.0 * std_dev_custom)
         lcl_input = st.sidebar.number_input("Lower Control Limit (LCL)",
-                 value=mean_custom - 2.0 * std_dev_custom)
+                            value=mean_custom - 2.0 * std_dev_custom)
         custom_ucl = ucl_input
         custom_lcl = lcl_input
         z_value = None
