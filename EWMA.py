@@ -139,7 +139,8 @@ if uploaded_file:
 
     fig_truncated = go.Figure(data=[go.Bar(x=bin_centers_truncated, y=freq_percent_truncated, marker_color='blue')])
     fig_truncated.update_layout(
-        title="Truncated Data - Percentile Frequency (%)",
+        # CHỈNH SỬA TIÊU ĐỀ Ở ĐÂY ĐỂ THỂ HIỆN PERCENTILE RANGE
+        title=f"Truncated Data - Percentile Frequency (%) <br> (Truncated between {lower_limit_percentile:.2f}th and {upper_limit_percentile:.2f}th Percentile)",
         xaxis_title="Values", # Trục hoành vẫn là giá trị, trục tung là % frequency
         yaxis_title="Frequency (%)",
         template="plotly_dark"
