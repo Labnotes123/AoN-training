@@ -57,18 +57,19 @@ if uploaded_file:
 
     # Chọn cột để phân tích
     selected_column = st.selectbox("Select the column to analyze", data.columns)
-    values = data[selected_column].dropna() # Giữ nguyên là Series sau dropna
+    values_series = data[selected_column].dropna() # Giữ nguyên là Series sau dropna
 
-    # **ÉP KIỂU DỮ LIỆU SANG NUMERIC VÀ LOẠI BỎ NAN MỘT LẦN NỮA - ĐÃ SỬA**
-    values = pd.to_numeric(pd.Series(values), errors='coerce').dropna().values # Ép kiểu Series rõ ràng
+    # **LÀM SẠCH DỮ LIỆU MẠNH MẼ HƠN - ĐÃ SỬA**
+    values_series = values_series.astype(str).str.strip() # Ép sang string và loại bỏ khoảng trắng
+    values = pd.to_numeric(values_series, errors='coerce').dropna().values # Ép kiểu Series rõ ràng sang numeric, loại bỏ NaN
 
     if values.size > 0:
         # 1) TÍNH PERCENTILES (NHƯNG KHÔNG HIỂN THỊ)
         percentiles_data = np.arange(0, 101, 0.5)
-        try: # **THÊM TRY-EXCEPT BLOCK ĐỀ PHÒNG LỖI PERCENTILE**
+        try: # **THÊM TRY-EXCEPT BLOCK ĐỀ PHÒNG LỖI PERCENTILE - ĐÃ SỬA**
             percentile_values_lookup = {p: np.percentile(values, p) for p in percentiles_data} # Tạo lookup dictionary
         except ValueError as e:
-            st.error(f"Error calculating percentiles: {e}") # Hiển thị thông báo lỗi chi tiết
+            st.error(f"**Error calculating percentiles. Please check your data file and selected column. Original error message:** {e}") # Hiển thị thông báo lỗi chi tiết hơn
             st.stop() # Dừng ứng dụng nếu không tính được percentile
             percentile_values_lookup = {} # Gán giá trị rỗng để tránh lỗi ở các phần code sau
 
