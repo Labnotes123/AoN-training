@@ -60,7 +60,7 @@ if uploaded_file:
     values = data[selected_column].dropna().values
 
     # 1) TÍNH PERCENTILES (NHƯNG KHÔNG HIỂN THỊ)
-    percentiles = {
+    percentiles_data = {
         "Percentile Ranges": ["1-99", "2-98", "3-97", "4-96", "5-95"],
         "Value Ranges": [
             np.percentile(values, 99),
@@ -70,48 +70,78 @@ if uploaded_file:
             np.percentile(values, 95),
         ]
     }
-    # CHỈ LƯU LẠI ĐỂ SỬ DỤNG NẾU CẦN, KHÔNG SHOW RA:
-    # st.subheader("Percentiles of the Uploaded Data")
-    # st.table(pd.DataFrame(percentiles))
 
     # 2) HIỂN THỊ BIỂU ĐỒ PHÂN PHỐI GỐC + TRUNCATION
     st.subheader("Histogram Comparison: Original Data vs. Truncated Data")
 
-    # Tính sẵn giá trị 5th percentile và 95th percentile
-    default_lower = float(np.percentile(values, 5))
-    default_upper = float(np.percentile(values, 95))
+    col_limit_1, col_limit_2 = st.columns(2)
 
-    # Cho phép user nhập/truy cập truncation limit
-    lower_limit = st.number_input(
-        "Lower Truncation Limit (5th percentile)",
-        min_value=float(values.min()),
-        max_value=float(values.max()),
-        value=default_lower
-    )
-    upper_limit = st.number_input(
-        "Upper Truncation Limit (95th percentile)",
-        min_value=float(values.min()),
-        max_value=float(values.max()),
-        value=default_upper
-    )
+    # --- Lower Limit Input ---
+    with col_limit_1:
+        st.subheader("Lower Truncation Limit")
+        lower_limit_type = st.radio("Input Type", ["Value", "Percentile"], key="lower_limit_type")
+        if lower_limit_type == "Value":
+            default_lower_val = float(np.percentile(values, 5))
+            lower_limit_val = st.number_input("Lower Limit Value", min_value=float(values.min()), max_value=float(values.max()), value=default_lower_val)
+            lower_limit_percentile = None
+            lower_limit = lower_limit_val # Sử dụng giá trị trực tiếp
+        else: # Percentile
+            default_lower_percentile = 5.0
+            lower_limit_percentile = st.number_input("Lower Limit Percentile (%)", min_value=0.0, max_value=100.0, value=default_lower_percentile, step=0.5)
+            lower_limit_val = float(np.percentile(values, lower_limit_percentile))
+            lower_limit = lower_limit_val # Sử dụng giá trị percentile đã tính toán
 
-    # Tạo hai histogram: Original và Truncated
+    # --- Upper Limit Input ---
+    with col_limit_2:
+        st.subheader("Upper Truncation Limit")
+        upper_limit_type = st.radio("Input Type", ["Value", "Percentile"], key="upper_limit_type")
+        if upper_limit_type == "Value":
+            default_upper_val = float(np.percentile(values, 95))
+            upper_limit_val = st.number_input("Upper Limit Value", min_value=float(values.min()), max_value=float(values.max()), value=default_upper_val)
+            upper_limit_percentile = None
+            upper_limit = upper_limit_val # Sử dụng giá trị trực tiếp
+        else: # Percentile
+            default_upper_percentile = 95.0
+            upper_limit_percentile = st.number_input("Upper Limit Percentile (%)", min_value=0.0, max_value=100.0, value=default_upper_percentile, step=0.5)
+            upper_limit_val = float(np.percentile(values, upper_limit_percentile))
+            upper_limit = upper_limit_val # Sử dụng giá trị percentile đã tính toán
+
+    # Lựa chọn hiển thị histogram gốc
+    original_hist_display = st.radio("Original Histogram Display", ["Values", "Percentile Frequency (%)"], key="original_hist_display")
+
     # Histogram 1: Dữ liệu gốc (Original)
-    fig_original = px.histogram(
-        x=values,
-        nbins=50,
-        title="Original Data",
-        labels={"x": "Values", "y": "Count"},
-        template="plotly_dark"
-    )
+    if original_hist_display == "Values":
+        fig_original = px.histogram(
+            x=values,
+            nbins=50,
+            title="Original Data",
+            labels={"x": "Values", "y": "Count"},
+            template="plotly_dark"
+        )
+    else: # Percentile Frequency (%)
+        hist, bins = np.histogram(values, bins=50, density=False)
+        freq_percent = (hist / len(values)) * 100
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+        fig_original = go.Figure(data=[go.Bar(x=bin_centers, y=freq_percent, marker_color='blue')])
+        fig_original.update_layout(
+            title="Original Data - Percentile Frequency (%)",
+            xaxis_title="Values",
+            yaxis_title="Frequency (%)",
+            template="plotly_dark"
+        )
 
-    # Histogram 2: Dữ liệu đã truncate
+
+    # Histogram 2: Dữ liệu đã truncate (Percentile Frequency %)
     truncated_values = values[(values >= lower_limit) & (values <= upper_limit)]
-    fig_truncated = px.histogram(
-        x=truncated_values,
-        nbins=50,
-        title="Truncated Data",
-        labels={"x": "Values", "y": "Count"},
+    hist_truncated, bins_truncated = np.histogram(truncated_values, bins=50, density=False)
+    freq_percent_truncated = (hist_truncated / len(truncated_values)) * 100 if len(truncated_values) > 0 else np.zeros_like(hist_truncated) # Xử lý trường hợp truncated_values rỗng
+    bin_centers_truncated = (bins_truncated[:-1] + bins_truncated[1:]) / 2
+
+    fig_truncated = go.Figure(data=[go.Bar(x=bin_centers_truncated, y=freq_percent_truncated, marker_color='blue')])
+    fig_truncated.update_layout(
+        title="Truncated Data - Percentile Frequency (%)",
+        xaxis_title="Values", # Trục hoành vẫn là giá trị, trục tung là % frequency
+        yaxis_title="Frequency (%)",
         template="plotly_dark"
     )
     # Thêm vline cho histogram truncated
@@ -130,6 +160,7 @@ if uploaded_file:
         annotation_position="top left"
     )
 
+
     # Dùng layout cột để đặt 2 biểu đồ cạnh nhau
     col1, col2 = st.columns(2)
     with col1:
@@ -141,15 +172,15 @@ if uploaded_file:
     st.subheader("Enter Custom Mean/Target and Standard Deviation (after truncation)")
 
     # Tự động tính dựa trên truncated_values
-    default_mean = float(np.mean(truncated_values))
-    default_std = float(np.std(truncated_values))
+    default_mean = float(np.mean(truncated_values)) if len(truncated_values) > 0 else 0.0 # Xử lý trường hợp truncated_values rỗng
+    default_std = float(np.std(truncated_values)) if len(truncated_values) > 0 else 0.0 # Xử lý trường hợp truncated_values rỗng
 
     # Người dùng có thể điều chỉnh
     mean_custom = st.number_input("Mean (Target)", value=default_mean)
     std_dev_custom = st.number_input("Standard Deviation", value=default_std)
 
     # Tính sample std (ddof=1) để hiển thị
-    sample_std = np.std(truncated_values, ddof=1)
+    sample_std = np.std(truncated_values, ddof=1) if len(truncated_values) > 0 else 0.0 # Xử lý trường hợp truncated_values rỗng
     st.write(f"**Sample Standard Deviation (ddof=1) from truncated data**: {sample_std:.4f}")
 
     # 4) TÙY CHỌN VẼ EWMA
