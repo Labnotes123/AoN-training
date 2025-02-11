@@ -60,16 +60,8 @@ if uploaded_file:
     values = data[selected_column].dropna().values
 
     # 1) TÍNH PERCENTILES (NHƯNG KHÔNG HIỂN THỊ)
-    percentiles = {
-        "Percentile Ranges": ["1-99", "2-98", "3-97", "4-96", "5-95"],
-        "Value Ranges": [
-            np.percentile(values, 99),
-            np.percentile(values, 98),
-            np.percentile(values, 97),
-            np.percentile(values, 96),
-            np.percentile(values, 95),
-        ]
-    }
+    percentiles_data = np.arange(0, 101, 0.5)  # Tính percentiles với độ chi tiết 0.5
+    percentile_values_lookup = {p: np.percentile(values, p) for p in percentiles_data} # Tạo lookup dictionary
 
     # 2) HIỂN THỊ BIỂU ĐỒ PHÂN PHỐI GỐC + TRUNCATION
     st.subheader("Histogram Comparison: Original Data vs. Truncated Data")
@@ -77,8 +69,8 @@ if uploaded_file:
     # Tính sẵn giá trị 5th percentile và 95th percentile làm default
     default_lower_percentile = 5
     default_upper_percentile = 95
-    default_lower_value = float(np.percentile(values, default_lower_percentile))
-    default_upper_value = float(np.percentile(values, default_upper_percentile))
+    default_lower_value = percentile_values_lookup[default_lower_percentile] # Lấy giá trị từ lookup
+    default_upper_value = percentile_values_lookup[default_upper_percentile] # Lấy giá trị từ lookup
 
     # Sử dụng cột để bố trí các ô nhập liệu cạnh nhau
     col_lower, col_upper = st.columns(2)
@@ -90,7 +82,7 @@ if uploaded_file:
             max_value=float(values.max()),
             value=default_lower_value
         )
-        lower_limit_percentile = st.text_input( # Ô hiển thị/nhập percentile Lower Limit
+        lower_limit_percentile_str = st.text_input( # Ô hiển thị/nhập percentile Lower Limit
             "Lower Truncation Limit (Percentile)",
             value=f"{default_lower_percentile:.2f}", # Hiển thị percentile mặc định
         )
@@ -102,33 +94,58 @@ if uploaded_file:
             max_value=float(values.max()),
             value=default_upper_value
         )
-        upper_limit_percentile = st.text_input( # Ô hiển thị/nhập percentile Upper Limit
+        upper_limit_percentile_str = st.text_input( # Ô hiển thị/nhập percentile Upper Limit
             "Upper Truncation Limit (Percentile)",
             value=f"{default_upper_percentile:.2f}", # Hiển thị percentile mặc định
         )
 
-    # Cập nhật lower_limit và upper_limit từ giá trị người dùng nhập
+    # Cập nhật lower_limit và upper_limit từ giá trị người dùng nhập (ban đầu là giá trị)
     lower_limit = lower_limit_value
     upper_limit = upper_limit_value
 
     # **Xử lý khi giá trị Percentile thay đổi**: (Cần chuyển đổi từ percentile sang value nếu người dùng nhập trực tiếp percentile)
     try:
-        lower_percentile_input_val = float(lower_limit_percentile)
+        lower_percentile_input_val = float(lower_limit_percentile_str)
         if 0 <= lower_percentile_input_val <= 100: # Kiểm tra percentile hợp lệ
-            lower_limit = float(np.percentile(values, lower_percentile_input_val))
-            # **Cập nhật lại ô giá trị** để đồng bộ (tùy chọn, nếu muốn hiển thị giá trị tương ứng khi đổi percentile)
-            lower_limit_value = lower_limit # Cập nhật giá trị để hiển thị đúng trên ô number_input
+            lower_limit = percentile_values_lookup[lower_percentile_input_val] # Lấy value từ lookup
+            lower_limit_value = lower_limit # Cập nhật ô giá trị để đồng bộ
     except ValueError:
         st.warning("Please enter a valid number for Lower Percentile.") # Xử lý nếu percentile nhập không hợp lệ
 
     try:
-        upper_percentile_input_val = float(upper_limit_percentile)
+        upper_percentile_input_val = float(upper_limit_percentile_str)
         if 0 <= upper_percentile_input_val <= 100: # Kiểm tra percentile hợp lệ
-            upper_limit = float(np.percentile(values, upper_percentile_input_val))
-            # **Cập nhật lại ô giá trị** để đồng bộ (tùy chọn)
-            upper_limit_value = upper_limit # Cập nhật giá trị để hiển thị đúng trên ô number_input
+            upper_limit = percentile_values_lookup[upper_percentile_input_val] # Lấy value từ lookup
+            upper_limit_value = upper_limit # Cập nhật ô giá trị để đồng bộ
     except ValueError:
         st.warning("Please enter a valid number for Upper Percentile.") # Xử lý nếu percentile nhập không hợp lệ
+
+    # **Xử lý khi giá trị Value thay đổi**: (Cần tính percentile tương ứng và cập nhật ô percentile)
+    # Hàm tìm percentile gần nhất với value (sử dụng lookup table)
+    def find_approximate_percentile(value, percentile_value_map):
+        best_percentile = 0
+        min_diff = float('inf')
+        for percentile, val in percentile_value_map.items():
+            diff = abs(val - value)
+            if diff < min_diff:
+                min_diff = diff
+                best_percentile = percentile
+        return best_percentile
+
+    lower_limit_percentile_display = find_approximate_percentile(lower_limit_value, percentile_values_lookup)
+    upper_limit_percentile_display = find_approximate_percentile(upper_limit_value, percentile_values_lookup)
+
+    # Cập nhật ô percentile hiển thị
+    with col_lower:
+        lower_limit_percentile_str = st.text_input(
+            "Lower Truncation Limit (Percentile)",
+            value=f"{lower_limit_percentile_display:.2f}", # Hiển thị percentile đã tính toán
+        )
+    with col_upper:
+        upper_limit_percentile_str = st.text_input(
+            "Upper Truncation Limit (Percentile)",
+            value=f"{upper_limit_percentile_display:.2f}", # Hiển thị percentile đã tính toán
+        )
 
 
     # Tạo hai histogram: Original và Truncated
