@@ -43,7 +43,7 @@ def calculate_ewma(data_array, lam):
 # --------------------------------------------------------------------------------
 # Streamlit App
 # --------------------------------------------------------------------------------
-st.title("Công cụ mô phỏng AoN sử dụng training") # <--- ĐÃ SỬA TIÊU ĐỀ PHẦN MỀM
+st.title("Công cụ mô phỏng AoN sử dụng training")
 
 st.header("Upload Your Data")
 uploaded_file = st.file_uploader("Upload your .xlsx or .csv file", type=["xlsx", "csv"])
@@ -80,39 +80,56 @@ if uploaded_file:
     default_lower_value = float(np.percentile(values, default_lower_percentile))
     default_upper_value = float(np.percentile(values, default_upper_percentile))
 
-    # Thay đổi từ selectbox thành checkbox
-    use_percentile_input = st.checkbox("Use Percentile Input for Truncation Limits") # <--- SỬA ĐỔI TRUNCATION INPUT TYPE
+    # Sử dụng cột để bố trí các ô nhập liệu cạnh nhau
+    col_lower, col_upper = st.columns(2)
 
-    if use_percentile_input: # <--- ĐIỀU KIỆN HIỂN THỊ INPUT PERCENTILE HOẶC VALUE
-        lower_percentile_input = st.number_input(
-            "Lower Truncation Percentile",
-            min_value=0.0,
-            max_value=100.0,
-            value=float(default_lower_percentile),
-            step=0.5
-        )
-        upper_percentile_input = st.number_input(
-            "Upper Truncation Percentile",
-            min_value=0.0,
-            max_value=100.0,
-            value=float(default_upper_percentile),
-            step=0.5
-        )
-        lower_limit = float(np.percentile(values, lower_percentile_input))
-        upper_limit = float(np.percentile(values, upper_percentile_input))
-    else:
-        lower_limit = st.number_input(
-            "Lower Truncation Limit",
+    with col_lower:
+        lower_limit_value = st.number_input( # Ô nhập giá trị Lower Limit
+            "Lower Truncation Limit (Value)",
             min_value=float(values.min()),
             max_value=float(values.max()),
             value=default_lower_value
         )
-        upper_limit = st.number_input(
-            "Upper Truncation Limit",
+        lower_limit_percentile = st.text_input( # Ô hiển thị/nhập percentile Lower Limit
+            "Lower Truncation Limit (Percentile)",
+            value=f"{default_lower_percentile:.2f}", # Hiển thị percentile mặc định
+        )
+
+    with col_upper:
+        upper_limit_value = st.number_input( # Ô nhập giá trị Upper Limit
+            "Upper Truncation Limit (Value)",
             min_value=float(values.min()),
             max_value=float(values.max()),
             value=default_upper_value
         )
+        upper_limit_percentile = st.text_input( # Ô hiển thị/nhập percentile Upper Limit
+            "Upper Truncation Limit (Percentile)",
+            value=f"{default_upper_percentile:.2f}", # Hiển thị percentile mặc định
+        )
+
+    # Cập nhật lower_limit và upper_limit từ giá trị người dùng nhập
+    lower_limit = lower_limit_value
+    upper_limit = upper_limit_value
+
+    # **Xử lý khi giá trị Percentile thay đổi**: (Cần chuyển đổi từ percentile sang value nếu người dùng nhập trực tiếp percentile)
+    try:
+        lower_percentile_input_val = float(lower_limit_percentile)
+        if 0 <= lower_percentile_input_val <= 100: # Kiểm tra percentile hợp lệ
+            lower_limit = float(np.percentile(values, lower_percentile_input_val))
+            # **Cập nhật lại ô giá trị** để đồng bộ (tùy chọn, nếu muốn hiển thị giá trị tương ứng khi đổi percentile)
+            lower_limit_value = lower_limit # Cập nhật giá trị để hiển thị đúng trên ô number_input
+    except ValueError:
+        st.warning("Please enter a valid number for Lower Percentile.") # Xử lý nếu percentile nhập không hợp lệ
+
+    try:
+        upper_percentile_input_val = float(upper_limit_percentile)
+        if 0 <= upper_percentile_input_val <= 100: # Kiểm tra percentile hợp lệ
+            upper_limit = float(np.percentile(values, upper_percentile_input_val))
+            # **Cập nhật lại ô giá trị** để đồng bộ (tùy chọn)
+            upper_limit_value = upper_limit # Cập nhật giá trị để hiển thị đúng trên ô number_input
+    except ValueError:
+        st.warning("Please enter a valid number for Upper Percentile.") # Xử lý nếu percentile nhập không hợp lệ
+
 
     # Tạo hai histogram: Original và Truncated
     # Histogram 1: Dữ liệu gốc (Original)
