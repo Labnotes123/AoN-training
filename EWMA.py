@@ -101,71 +101,18 @@ if uploaded_file:
         lower_limit = float(np.percentile(values, lower_percentile_input))
         upper_limit = float(np.percentile(values, upper_percentile_input))
     else:
-        # Initialize session state for lower and upper limits if not already present
-        if 'lower_limit_value' not in st.session_state:
-            st.session_state['lower_limit_value'] = default_lower_value
-        if 'upper_limit_value' not in st.session_state:
-            st.session_state['upper_limit_value'] = default_upper_value
-        if 'lower_limit_percentile' not in st.session_state:
-            st.session_state['lower_limit_percentile'] = default_lower_percentile # Placeholder, calculate if needed
-        if 'upper_limit_percentile' not in st.session_state:
-            st.session_state['upper_limit_percentile'] = default_upper_percentile # Placeholder, calculate if needed
-
-
-        def get_percentile_label(value, original_values):
-            percentile_rank = np.sum(original_values <= value) / len(original_values) * 100
-            return f"{value:.2f} ({percentile_rank:.0f} percentile)"
-
-        def calculate_percentile_value(value, original_values):
-            return np.sum(original_values <= value) / len(original_values) * 100
-
-        lower_limit_value = st.number_input(
+        lower_limit = st.number_input(
             "Lower Truncation Limit",
             min_value=float(values.min()),
             max_value=float(values.max()),
-            value=st.session_state['lower_limit_value'],
-            on_change=None, # Remove on_change to handle enter directly
+            value=default_lower_value
         )
-
-        upper_limit_value = st.number_input(
+        upper_limit = st.number_input(
             "Upper Truncation Limit",
             min_value=float(values.min()),
             max_value=float(values.max()),
-            value=st.session_state['upper_limit_value'],
-            on_change=None, # Remove on_change to handle enter directly
+            value=default_upper_value
         )
-
-        if lower_limit_value != st.session_state['lower_limit_value']:
-            # Ensure the new value is not above max_value before updating session state
-            if lower_limit_value <= float(values.max()):
-                st.session_state['lower_limit_value'] = lower_limit_value
-                st.session_state['lower_limit_percentile'] = calculate_percentile_value(lower_limit_value, values)
-            else:
-                st.warning(f"Lower limit value cannot exceed the maximum value of the data: {values.max():.2f}")
-                lower_limit_value = st.session_state['lower_limit_value'] # Revert to the valid session state value
-
-        if upper_limit_value != st.session_state['upper_limit_value']:
-            # Ensure the new value is not above max_value before updating session state
-            if upper_limit_value <= float(values.max()): # While logically it should not exceed max, adding check for robustness
-                st.session_state['upper_limit_value'] = upper_limit_value
-                st.session_state['upper_limit_percentile'] = calculate_percentile_value(upper_limit_value, values)
-            else:
-                st.warning(f"Upper limit value cannot exceed the maximum value of the data: {values.max():.2f}")
-                upper_limit_value = st.session_state['upper_limit_value'] # Revert to the valid session state value
-
-
-        lower_limit_label = "Lower Truncation Limit"
-        if 'lower_limit_percentile' in st.session_state:
-            lower_limit_label = f"Lower Truncation Limit: {st.session_state['lower_limit_value']:.2f} ({st.session_state['lower_limit_percentile']:.0f} percentile)"
-
-        upper_limit_label = "Upper Truncation Limit"
-        if 'upper_limit_percentile' in st.session_state:
-            upper_limit_label = f"Upper Truncation Limit: {st.session_state['upper_limit_value']:.2f} ({st.session_state['upper_limit_percentile']:.0f} percentile)"
-
-
-        lower_limit = st.session_state['lower_limit_value']
-        upper_limit = st.session_state['upper_limit_value']
-
 
     # Tạo hai histogram: Original và Truncated
     # Histogram 1: Dữ liệu gốc (Original)
@@ -209,4 +156,155 @@ if uploaded_file:
     with col2:
         st.plotly_chart(fig_truncated, use_container_width=True)
 
-    #
+    # 3) TÍNH LẠI MEAN VÀ SD DỰA TRÊN DỮ LIỆU ĐÃ TRUNCATE + CHO PHÉP USER TÙY CHỈNH
+    st.subheader("Enter Custom Mean/Target and Standard Deviation (after truncation)")
+
+    # Tự động tính dựa trên truncated_values
+    default_mean = float(np.mean(truncated_values))
+    default_std = float(np.std(truncated_values))
+
+    # Người dùng có thể điều chỉnh
+    mean_custom = st.number_input("Mean (Target)", value=default_mean)
+    std_dev_custom = st.number_input("Standard Deviation", value=default_std)
+
+    # Tính sample std (ddof=1) để hiển thị
+    sample_std = np.std(truncated_values, ddof=1)
+    st.write(f"**Sample Standard Deviation (ddof=1) from truncated data**: {sample_std:.4f}")
+
+    # 4) TÙY CHỌN VẼ EWMA
+    st.sidebar.header("EWMA Approach")
+    ewma_option = st.sidebar.radio("Choose EWMA Approach", ("Block-based", "Lambda-based"))
+
+    block_size = st.sidebar.number_input("Block Size", min_value=1, value=100)
+    lambda_factor = st.sidebar.slider("Weighting Factor (λ)", 0.01, 1.0, 0.1, 0.01)
+
+    st.sidebar.header("Control Limit Approach")
+    approach = st.sidebar.radio("Choose Control Limit Approach", ("Manual", "Confidence Interval"))
+
+    # Dùng mean_custom, std_dev_custom để tính UCL, LCL tùy thuộc option
+    if approach == "Manual":
+        ucl_input = st.sidebar.number_input("Upper Control Limit (UCL)",
+                 value=mean_custom + 2.0 * std_dev_custom)
+        lcl_input = st.sidebar.number_input("Lower Control Limit (LCL)",
+                 value=mean_custom - 2.0 * std_dev_custom)
+        custom_ucl = ucl_input
+        custom_lcl = lcl_input
+        z_value = None
+    else:
+        z_value = st.sidebar.slider("Z Value", 1.0, 5.0, 3.0, 0.1)
+        custom_ucl = mean_custom + z_value * std_dev_custom
+        custom_lcl = mean_custom - z_value * std_dev_custom
+
+    # --------------------------------------------------------------------------------
+    # (5) TẠO DỮ LIỆU THEO EWMA OPTION
+    # --------------------------------------------------------------------------------
+    if ewma_option == "Block-based":
+        data_for_ewma = chunk_data_and_average(truncated_values, block_size)
+        x_label = "Block Index"
+    else:
+        data_for_ewma = truncated_values
+        x_label = "Data Point"
+
+    ewma_values = calculate_ewma(data_for_ewma, lambda_factor)
+
+    # Xác định Out-of-control
+    out_of_control_points = []
+    for i, val in enumerate(ewma_values):
+        if val > custom_ucl or val < custom_lcl:
+            out_of_control_points.append((i, val))
+
+    # --------------------------------------------------------------------------------
+    # (6) VẼ BIỂU ĐỒ EWMA
+    # --------------------------------------------------------------------------------
+    fig_ewma = go.Figure()
+
+    fig_ewma.add_trace(go.Scatter(
+        x=np.arange(len(ewma_values)),
+        y=ewma_values,
+        mode='lines',
+        name='EWMA',
+        line=dict(color='blue')
+    ))
+    if out_of_control_points:
+        idx_ooc, val_ooc = zip(*out_of_control_points)
+        fig_ewma.add_trace(go.Scatter(
+            x=idx_ooc,
+            y=val_ooc,
+            mode='markers',
+            name='Out of Control',
+            marker=dict(color='red', size=8)
+        ))
+
+    fig_ewma.add_hline(y=mean_custom, line_dash="dot", line_color="yellow", name="Mean")
+    fig_ewma.add_hline(y=custom_ucl, line_dash="dash", line_color="red", name="UCL")
+    fig_ewma.add_hline(y=custom_lcl, line_dash="dash", line_color="blue", name="LCL")
+
+    title_chart = "EWMA Chart - " + ewma_option
+    fig_ewma.update_layout(
+        title=title_chart,
+        xaxis_title=x_label,
+        yaxis_title="EWMA Value",
+        template="plotly_dark",
+        legend=dict(yanchor="top", y=1, xanchor="left", x=1.02)
+    )
+
+    # Annotation
+    annotation_list = [
+        f"Mean: {mean_custom:.2f}",
+        f"Block Size: {block_size}",
+        f"λ: {lambda_factor}",
+        f"UCL: {custom_ucl:.2f}",
+        f"LCL: {custom_lcl:.2f}",
+    ]
+    if approach == "Confidence Interval" and z_value is not None:
+        annotation_list.append(f"z: {z_value}")
+
+    annotation_text = "<br>".join(annotation_list)
+    fig_ewma.add_annotation(
+        x=1.02,
+        y=0.85,
+        xref="paper",
+        yref="paper",
+        text=annotation_text,
+        showarrow=False,
+        align="left",
+        xanchor="left",
+        yanchor="top",
+        font=dict(size=12, color="white")
+    )
+
+    # Hiển thị chart
+    st.plotly_chart(fig_ewma, use_container_width=True)
+
+    # --------------------------------------------------------------------------------
+    # 6.5) HIỂN THỊ BẢNG THÔNG TIN THAM SỐ
+    # --------------------------------------------------------------------------------
+    param_data = {
+        "Mean (Custom)": [mean_custom],
+        "Block Size": [block_size],
+        "Weighting Factor (λ)": [lambda_factor],
+        "UCL": [custom_ucl],
+        "LCL": [custom_lcl],
+        "Z Value": [z_value if (approach == "Confidence Interval") else None]
+    }
+    df_param = pd.DataFrame(param_data)
+
+    st.subheader("EWMA Parameter Table")
+    st.table(df_param)
+
+    # --------------------------------------------------------------------------------
+    # (7) HIỂN THỊ OUT-OF-CONTROL
+    # --------------------------------------------------------------------------------
+    st.metric(label="Total Out-of-Control Points", value=len(out_of_control_points))
+
+    show_table = st.checkbox("Show Out-of-Control Points", value=False)
+    if show_table:
+        if out_of_control_points:
+            st.subheader("Out-of-Control Points")
+            out_of_control_df = pd.DataFrame(out_of_control_points, columns=[x_label, "EWMA Value"])
+            st.table(out_of_control_df)
+        else:
+            st.info("No out-of-control points detected.")
+
+else:
+    st.warning("Please upload a file to proceed.")
