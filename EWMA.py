@@ -57,30 +57,28 @@ if uploaded_file:
 
     # Chọn cột để phân tích
     selected_column = st.selectbox("Select the column to analyze", data.columns)
-    values_series = data[selected_column].dropna() # Giữ nguyên là Series sau dropna
-
-    # **LÀM SẠCH DỮ LIỆU MẠNH MẼ HƠN - ĐÃ SỬA**
-    values_series = values_series.astype(str).str.strip() # Ép sang string và loại bỏ khoảng trắng
-    values = pd.to_numeric(values_series, errors='coerce').dropna().values # Ép kiểu Series rõ ràng sang numeric, loại bỏ NaN
+    values_series = data[selected_column].dropna()
+    values_series = values_series.astype(str).str.strip()
+    values = pd.to_numeric(values_series, errors='coerce').dropna().values
 
     if values.size > 0:
         # 1) TÍNH PERCENTILES (NHƯNG KHÔNG HIỂN THỊ)
         percentiles_data = np.arange(0, 101, 0.5)
-        try: # **THÊM TRY-EXCEPT BLOCK ĐỀ PHÒNG LỖI PERCENTILE - ĐÃ SỬA**
-            percentile_values_lookup = {p: np.percentile(values, p) for p in percentiles_data} # Tạo lookup dictionary
+        try:
+            percentile_values_lookup = {p: np.percentile(values, p) for p in percentiles_data}
         except ValueError as e:
-            st.error(f"**Error calculating percentiles. Please check your data file and selected column. Original error message:** {e}") # Hiển thị thông báo lỗi chi tiết hơn
-            st.stop() # Dừng ứng dụng nếu không tính được percentile
-            percentile_values_lookup = {} # Gán giá trị rỗng để tránh lỗi ở các phần code sau
+            st.error(f"Error calculating percentiles. Please check your data file and selected column. Original error message: {e}")
+            st.stop()
+            percentile_values_lookup = {}
 
         # 2) HIỂN THỊ BIỂU ĐỒ PHÂN PHỐI GỐC + TRUNCATION
         st.subheader("Histogram Comparison: Original Data vs. Truncated Data")
 
-        # Tính sẵn giá trị 5th percentile và 95th percentile làm default
-        default_lower_percentile = 5
-        default_upper_percentile = 95
-        default_lower_value = percentile_values_lookup.get(default_lower_percentile, np.nan) # Sử dụng .get() để tránh KeyError
-        default_upper_value = percentile_values_lookup.get(default_upper_percentile, np.nan) # Sử dụng .get() để tránh KeyError
+        # **THAY ĐỔI GIÁ TRỊ PERCENTILE MẶC ĐỊNH - ĐÃ SỬA**
+        default_lower_percentile = 2.5
+        default_upper_percentile = 97.5
+        default_lower_value = percentile_values_lookup.get(default_lower_percentile, np.nan)
+        default_upper_value = percentile_values_lookup.get(default_upper_percentile, np.nan)
 
         # Sử dụng cột để bố trí các ô nhập liệu cạnh nhau
         col_lower, col_upper = st.columns(2)
@@ -90,7 +88,7 @@ if uploaded_file:
                 "Lower Truncation Limit (Value)",
                 min_value=float(values.min()),
                 max_value=float(values.max()),
-                value=default_lower_value if not np.isnan(default_lower_value) else float(values.min()) # Xử lý NaN default value
+                value=default_lower_value if not np.isnan(default_lower_value) else float(values.min())
             )
             lower_limit_percentile_str = st.text_input( # Ô hiển thị/nhập percentile Lower Limit
                 "Lower Truncation Limit (Percentile)",
@@ -102,7 +100,7 @@ if uploaded_file:
                 "Upper Truncation Limit (Value)",
                 min_value=float(values.min()),
                 max_value=float(values.max()),
-                value=default_upper_value if not np.isnan(default_upper_value) else float(values.max()) # Xử lý NaN default value
+                value=default_upper_value if not np.isnan(default_upper_value) else float(values.max())
             )
             upper_limit_percentile_str = st.text_input( # Ô hiển thị/nhập percentile Upper Limit
                 "Upper Truncation Limit (Percentile)",
@@ -116,48 +114,48 @@ if uploaded_file:
         # **Xử lý khi giá trị Percentile thay đổi**: (Cần chuyển đổi từ percentile sang value nếu người dùng nhập trực tiếp percentile)
         try:
             lower_percentile_input_val = float(lower_limit_percentile_str)
-            if 0 <= lower_percentile_input_val <= 100: # **KIỂM TRA PERCENTILE NHẬP VÀO CÓ HỢP LỆ KHÔNG**
-                lower_limit = percentile_values_lookup.get(lower_percentile_input_val, np.nan) # Lấy value từ lookup, xử lý KeyError
-                if np.isnan(lower_limit): # Xử lý nếu không tìm thấy percentile trong lookup (do lỗi tính percentile ban đầu)
+            if 0 <= lower_percentile_input_val <= 100:
+                lower_limit = percentile_values_lookup.get(lower_percentile_input_val, np.nan)
+                if np.isnan(lower_limit):
                     lower_limit = default_lower_value if not np.isnan(default_lower_value) else float(values.min())
                     st.warning("Percentile value not found in lookup, using default value.")
-                lower_limit_value = lower_limit # Cập nhật ô giá trị để đồng bộ
+                lower_limit_value = lower_limit
             else:
-                st.warning("Lower Percentile must be between 0 and 100.") # Cảnh báo nếu percentile không hợp lệ
-                lower_percentile_input_val = default_lower_percentile # Reset về giá trị default
+                st.warning("Lower Percentile must be between 0 and 100.")
+                lower_percentile_input_val = default_lower_percentile
                 lower_limit = default_lower_value if not np.isnan(default_lower_value) else float(values.min())
-                lower_limit_value = default_lower_value # Reset ô giá trị về default
-                lower_limit_percentile_str = f"{default_lower_percentile:.2f}" # Reset ô percentile về default
+                lower_limit_value = default_lower_value
+                lower_limit_percentile_str = f"{default_lower_percentile:.2f}"
 
         except ValueError:
-            st.warning("Please enter a valid number for Lower Percentile.") # Xử lý nếu percentile nhập không hợp lệ
-            lower_percentile_input_val = default_lower_percentile # Reset về default
+            st.warning("Please enter a valid number for Lower Percentile.")
+            lower_percentile_input_val = default_lower_percentile
             lower_limit = default_lower_value if not np.isnan(default_lower_value) else float(values.min())
-            lower_limit_value = default_lower_value # Reset ô giá trị về default
-            lower_limit_percentile_str = f"{default_lower_percentile:.2f}" # Reset ô percentile về default
+            lower_limit_value = default_lower_value
+            lower_limit_percentile_str = f"{default_lower_percentile:.2f}"
 
 
         try:
             upper_percentile_input_val = float(upper_limit_percentile_str)
-            if 0 <= upper_percentile_input_val <= 100: # **KIỂM TRA PERCENTILE NHẬP VÀO CÓ HỢP LỆ KHÔNG**
-                upper_limit = percentile_values_lookup.get(upper_percentile_input_val, np.nan) # Lấy value từ lookup, xử lý KeyError
-                if np.isnan(upper_limit): # Xử lý nếu không tìm thấy percentile trong lookup
+            if 0 <= upper_percentile_input_val <= 100:
+                upper_limit = percentile_values_lookup.get(upper_percentile_input_val, np.nan)
+                if np.isnan(upper_limit):
                     upper_limit = default_upper_value if not np.isnan(default_upper_value) else float(values.max())
                     st.warning("Percentile value not found in lookup, using default value.")
-                upper_limit_value = upper_limit # Cập nhật ô giá trị để đồng bộ
+                upper_limit_value = upper_limit
             else:
-                st.warning("Upper Percentile must be between 0 and 100.") # Cảnh báo nếu percentile không hợp lệ
-                upper_percentile_input_val = default_upper_percentile # Reset về giá trị default
+                st.warning("Upper Percentile must be between 0 and 100.")
+                upper_percentile_input_val = default_upper_percentile
                 upper_limit = default_upper_value if not np.isnan(default_upper_value) else float(values.max())
-                upper_limit_value = default_upper_value # Reset ô giá trị về default
-                upper_limit_percentile_str = f"{default_upper_percentile:.2f}" # Reset ô percentile về default
+                upper_limit_value = default_upper_value
+                upper_limit_percentile_str = f"{default_upper_percentile:.2f}"
 
         except ValueError:
-            st.warning("Please enter a valid number for Upper Percentile.") # Xử lý nếu percentile nhập không hợp lệ
-            upper_percentile_input_val = default_upper_percentile # Reset về default
+            st.warning("Please enter a valid number for Upper Percentile.")
+            upper_percentile_input_val = default_upper_percentile
             upper_limit = default_upper_value if not np.isnan(default_upper_value) else float(values.max())
-            upper_limit_value = default_upper_value # Reset ô giá trị về default
-            upper_limit_percentile_str = f"{default_upper_percentile:.2f}" # Reset ô percentile về default
+            upper_limit_value = default_upper_value
+            upper_limit_percentile_str = f"{default_upper_percentile:.2f}"
 
 
         # **Xử lý khi giá trị Value thay đổi**: (Cần tính percentile tương ứng và cập nhật ô percentile)
@@ -187,8 +185,7 @@ if uploaded_file:
                 value=f"{upper_limit_percentile_display:.2f}", # Hiển thị percentile đã tính toán
             )
 
-
-        # Tạo hai histogram: Original và Truncated
+        # Vẽ hai histogram: Original và Truncated
         # Histogram 1: Dữ liệu gốc (Original)
         fig_original = px.histogram(
             x=values,
