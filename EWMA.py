@@ -57,327 +57,271 @@ if uploaded_file:
 
     # Chọn cột để phân tích
     selected_column = st.selectbox("Select the column to analyze", data.columns)
-    values_series = data[selected_column].dropna()
-    values_series = values_series.astype(str).str.strip()
-    values = pd.to_numeric(values_series, errors='coerce').dropna().values
+    values = data[selected_column].dropna().values
 
-    if values.size > 0:
-        # 1) TÍNH PERCENTILES (NHƯNG KHÔNG HIỂN THỊ)
-        percentiles_data = np.arange(0, 101, 0.5)
-        try:
-            percentile_values_lookup = {p: np.percentile(values, p) for p in percentiles_data}
-        except ValueError as e:
-            st.error(f"Error calculating percentiles. Please check your data file and selected column. Original error message: {e}")
-            st.stop()
-            percentile_values_lookup = {}
-
-        # 2) HIỂN THỊ BIỂU ĐỒ PHÂN PHỐI GỐC + TRUNCATION
-        st.subheader("Histogram Comparison: Original Data vs. Truncated Data")
-
-        # **THAY ĐỔI GIÁ TRỊ PERCENTILE MẶC ĐỊNH - ĐÃ SỬA**
-        default_lower_percentile = 2.5
-        default_upper_percentile = 97.5
-        default_lower_value = percentile_values_lookup.get(default_lower_percentile, np.nan)
-        default_upper_value = percentile_values_lookup.get(default_upper_percentile, np.nan)
-
-        # Sử dụng cột để bố trí các ô nhập liệu cạnh nhau
-        col_lower, col_upper = st.columns(2)
-
-        with col_lower:
-            lower_limit_value = st.number_input( # Ô nhập giá trị Lower Limit
-                "Lower Truncation Limit (Value)",
-                min_value=float(values.min()),
-                max_value=float(values.max()),
-                value=default_lower_value if not np.isnan(default_lower_value) else float(values.min())
-            )
-            lower_limit_percentile_str = st.text_input( # Ô hiển thị/nhập percentile Lower Limit
-                "Lower Truncation Limit (Percentile)",
-                value=f"{default_lower_percentile:.2f}", # Hiển thị percentile mặc định
-            )
-
-        with col_upper:
-            upper_limit_value = st.number_input( # Ô nhập giá trị Upper Limit
-                "Upper Truncation Limit (Value)",
-                min_value=float(values.min()),
-                max_value=float(values.max()),
-                value=default_upper_value if not np.isnan(default_upper_value) else float(values.max())
-            )
-            upper_limit_percentile_str = st.text_input( # Ô hiển thị/nhập percentile Upper Limit
-                "Upper Truncation Limit (Percentile)",
-                value=f"{default_upper_percentile:.2f}", # Hiển thị percentile mặc định
-            )
-
-        # Cập nhật lower_limit và upper_limit từ giá trị người dùng nhập (ban đầu là giá trị)
-        lower_limit = lower_limit_value
-        upper_limit = upper_limit_value
-
-        # **Xử lý khi giá trị Percentile thay đổi**: (Cần chuyển đổi từ percentile sang value nếu người dùng nhập trực tiếp percentile)
-        try:
-            lower_percentile_input_val = float(lower_limit_percentile_str)
-            if 0 <= lower_percentile_input_val <= 100:
-                lower_limit = percentile_values_lookup.get(lower_percentile_input_val, np.nan)
-                if np.isnan(lower_limit):
-                    lower_limit = default_lower_value if not np.isnan(default_lower_value) else float(values.min())
-                    st.warning("Percentile value not found in lookup, using default value.")
-                lower_limit_value = lower_limit
-            else:
-                st.warning("Lower Percentile must be between 0 and 100.")
-                lower_percentile_input_val = default_lower_percentile
-                lower_limit = default_lower_value if not np.isnan(default_lower_value) else float(values.min())
-                lower_limit_value = default_lower_value
-                lower_limit_percentile_str = f"{default_lower_percentile:.2f}"
-
-        except ValueError:
-            st.warning("Please enter a valid number for Lower Percentile.")
-            lower_percentile_input_val = default_lower_percentile
-            lower_limit = default_lower_value if not np.isnan(default_lower_value) else float(values.min())
-            lower_limit_value = default_lower_value
-            lower_limit_percentile_str = f"{default_lower_percentile:.2f}"
-
-
-        try:
-            upper_percentile_input_val = float(upper_limit_percentile_str)
-            if 0 <= upper_percentile_input_val <= 100:
-                upper_limit = percentile_values_lookup.get(upper_percentile_input_val, np.nan)
-                if np.isnan(upper_limit):
-                    upper_limit = default_upper_value if not np.isnan(default_upper_value) else float(values.max())
-                    st.warning("Percentile value not found in lookup, using default value.")
-                upper_limit_value = upper_limit
-            else:
-                st.warning("Upper Percentile must be between 0 and 100.")
-                upper_percentile_input_val = default_upper_percentile
-                upper_limit = default_upper_value if not np.isnan(default_upper_value) else float(values.max())
-                upper_limit_value = default_upper_value
-                upper_limit_percentile_str = f"{default_upper_percentile:.2f}"
-
-        except ValueError:
-            st.warning("Please enter a valid number for Upper Percentile.")
-            upper_percentile_input_val = default_upper_percentile
-            upper_limit = default_upper_value if not np.isnan(default_upper_value) else float(values.max())
-            upper_limit_value = default_upper_value
-            upper_limit_percentile_str = f"{default_upper_percentile:.2f}"
-
-
-        # **Xử lý khi giá trị Value thay đổi**: (Cần tính percentile tương ứng và cập nhật ô percentile)
-        # Hàm tìm percentile gần nhất với value (sử dụng lookup table)
-        def find_approximate_percentile(value, percentile_value_map):
-            best_percentile = 0
-            min_diff = float('inf')
-            for percentile, val in percentile_value_map.items():
-                diff = abs(val - value)
-                if diff < min_diff:
-                    min_diff = diff
-                    best_percentile = percentile
-            return best_percentile
-
-        lower_limit_percentile_display = find_approximate_percentile(lower_limit_value, percentile_values_lookup)
-        upper_limit_percentile_display = find_approximate_percentile(upper_limit_value, percentile_values_lookup)
-
-        # Cập nhật ô percentile hiển thị
-        with col_lower:
-            lower_limit_percentile_str = st.text_input(
-                "Lower Truncation Limit (Percentile)",
-                value=f"{lower_limit_percentile_display:.2f}", # Hiển thị percentile đã tính toán
-            )
-        with col_upper:
-            upper_limit_percentile_str = st.text_input(
-                "Upper Truncation Limit (Percentile)",
-                value=f"{upper_limit_percentile_display:.2f}", # Hiển thị percentile đã tính toán
-            )
-
-        # Vẽ hai histogram: Original và Truncated
-        # Histogram 1: Dữ liệu gốc (Original)
-        fig_original = px.histogram(
-            x=values,
-            nbins=50,
-            title="Original Data",
-            labels={"x": "Values", "y": "Count"},
-            template="plotly_dark"
-        )
-
-        # Histogram 2: Dữ liệu đã truncate
-        truncated_values = values[(values >= lower_limit) & (values <= upper_limit)]
-        fig_truncated = px.histogram(
-            x=truncated_values,
-            nbins=50,
-            title="Truncated Data",
-            labels={"x": "Values", "y": "Count"},
-            template="plotly_dark"
-        )
-        # Thêm vline cho histogram truncated
-        fig_truncated.add_vline(
-            x=lower_limit,
-            line_dash="dash",
-            line_color="red",
-            annotation_text="Lower Limit",
-            annotation_position="bottom right"
-        )
-        fig_truncated.add_vline(
-            x=upper_limit,
-            line_dash="dash",
-            line_color="green",
-            annotation_text="Upper Limit",
-            annotation_position="top left"
-        )
-
-        # Dùng layout cột để đặt 2 biểu đồ cạnh nhau
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(fig_original, use_container_width=True)
-        with col2:
-            st.plotly_chart(fig_truncated, use_container_width=True)
-
-        # 3) TÍNH LẠI MEAN VÀ SD DỰA TRÊN DỮ LIỆU ĐÃ TRUNCATE + CHO PHÉP USER TÙY CHỈNH
-        st.subheader("Enter Custom Mean/Target and Standard Deviation (after truncation)")
-
-        # Tự động tính dựa trên truncated_values
-        default_mean = float(np.mean(truncated_values))
-        default_std = float(np.std(truncated_values))
-
-        # Người dùng có thể điều chỉnh
-        mean_custom = st.number_input("Mean (Target)", value=default_mean)
-        std_dev_custom = st.number_input("Standard Deviation", value=default_std)
-
-        # Tính sample std (ddof=1) để hiển thị
-        sample_std = np.std(truncated_values, ddof=1)
-        st.write(f"**Sample Standard Deviation (ddof=1) from truncated data**: {sample_std:.4f}")
-
-        # 4) TÙY CHỌN VẼ EWMA
-        st.sidebar.header("EWMA Approach")
-        ewma_option = st.sidebar.radio("Choose EWMA Approach", ("Block-based", "Lambda-based"))
-
-        block_size = st.sidebar.number_input("Block Size", min_value=1, value=100)
-        lambda_factor = st.sidebar.slider("Weighting Factor (λ)", 0.01, 1.0, 0.1, 0.01)
-
-        st.sidebar.header("Control Limit Approach")
-        approach = st.sidebar.radio("Choose Control Limit Approach", ("Manual", "Confidence Interval"))
-
-        # Dùng mean_custom, std_dev_custom để tính UCL, LCL tùy thuộc option
-        if approach == "Manual":
-            ucl_input = st.sidebar.number_input("Upper Control Limit (UCL)",
-                     value=mean_custom + 2.0 * std_dev_custom)
-            lcl_input = st.sidebar.number_input("Lower Control Limit (LCL)",
-                     value=mean_custom - 2.0 * std_dev_custom)
-            custom_ucl = ucl_input
-            custom_lcl = lcl_input
-            z_value = None
-        else:
-            z_value = st.sidebar.slider("Z Value", 1.0, 5.0, 3.0, 0.1)
-            custom_ucl = mean_custom + z_value * std_dev_custom
-            custom_lcl = mean_custom - z_value * std_dev_custom
-
-        # --------------------------------------------------------------------------------
-        # (5) TẠO DỮ LIỆU THEO EWMA OPTION
-        # --------------------------------------------------------------------------------
-        if ewma_option == "Block-based":
-            data_for_ewma = chunk_data_and_average(truncated_values, block_size)
-            x_label = "Block Index"
-        else:
-            data_for_ewma = truncated_values
-            x_label = "Data Point"
-
-        ewma_values = calculate_ewma(data_for_ewma, lambda_factor)
-
-        # Xác định Out-of-control
-        out_of_control_points = []
-        for i, val in enumerate(ewma_values):
-            if val > custom_ucl or val < custom_lcl:
-                out_of_control_points.append((i, val))
-
-        # --------------------------------------------------------------------------------
-        # (6) VẼ BIỂU ĐỒ EWMA
-        # --------------------------------------------------------------------------------
-        fig_ewma = go.Figure()
-
-        fig_ewma.add_trace(go.Scatter(
-            x=np.arange(len(ewma_values)),
-            y=ewma_values,
-            mode='lines',
-            name='EWMA',
-            line=dict(color='blue')
-        ))
-        if out_of_control_points:
-            idx_ooc, val_ooc = zip(*out_of_control_points)
-            fig_ewma.add_trace(go.Scatter(
-                x=idx_ooc,
-                y=val_ooc,
-                mode='markers',
-                name='Out of Control',
-                marker=dict(color='red', size=8)
-            ))
-
-        fig_ewma.add_hline(y=mean_custom, line_dash="dot", line_color="yellow", name="Mean")
-        fig_ewma.add_hline(y=custom_ucl, line_dash="dash", line_color="red", name="UCL")
-        fig_ewma.add_hline(y=custom_lcl, line_dash="dash", line_color="blue", name="LCL")
-
-        title_chart = "EWMA Chart - " + ewma_option
-        fig_ewma.update_layout(
-            title=title_chart,
-            xaxis_title=x_label,
-            yaxis_title="EWMA Value",
-            template="plotly_dark",
-            legend=dict(yanchor="top", y=1, xanchor="left", x=1.02)
-        )
-
-        # Annotation
-        annotation_list = [
-            f"Mean: {mean_custom:.2f}",
-            f"Block Size: {block_size}",
-            f"λ: {lambda_factor}",
-            f"UCL: {custom_ucl:.2f}",
-            f"LCL: {custom_lcl:.2f}",
+    # 1) TÍNH PERCENTILES (NHƯNG KHÔNG HIỂN THỊ)
+    percentiles = {
+        "Percentile Ranges": ["1-99", "2-98", "3-97", "4-96", "5-95"],
+        "Value Ranges": [
+            np.percentile(values, 99),
+            np.percentile(values, 98),
+            np.percentile(values, 97),
+            np.percentile(values, 96),
+            np.percentile(values, 95),
         ]
-        if approach == "Confidence Interval" and z_value is not None:
-            annotation_list.append(f"z: {z_value}")
+    }
 
-        annotation_text = "<br>".join(annotation_list)
-        fig_ewma.add_annotation(
-            x=1.02,
-            y=0.85,
-            xref="paper",
-            yref="paper",
-            text=annotation_text,
-            showarrow=False,
-            align="left",
-            xanchor="left",
-            yanchor="top",
-            font=dict(size=12, color="white")
+    # 2) HIỂN THỊ BIỂU ĐỒ PHÂN PHỐI GỐC + TRUNCATION
+    st.subheader("Histogram Comparison: Original Data vs. Truncated Data")
+
+    # Tính sẵn giá trị 5th percentile và 95th percentile làm default
+    default_lower_percentile = 5
+    default_upper_percentile = 95
+    default_lower_value = float(np.percentile(values, default_lower_percentile))
+    default_upper_value = float(np.percentile(values, default_upper_percentile))
+
+    # Sử dụng cột để bố trí các ô nhập liệu cạnh nhau
+    col_lower, col_upper = st.columns(2)
+
+    with col_lower:
+        lower_limit_value = st.number_input( # Ô nhập giá trị Lower Limit
+            "Lower Truncation Limit (Value)",
+            min_value=float(values.min()),
+            max_value=float(values.max()),
+            value=default_lower_value
+        )
+        lower_limit_percentile = st.text_input( # Ô hiển thị/nhập percentile Lower Limit
+            "Lower Truncation Limit (Percentile)",
+            value=f"{default_lower_percentile:.2f}", # Hiển thị percentile mặc định
         )
 
-        # Hiển thị chart
-        st.plotly_chart(fig_ewma, use_container_width=True)
+    with col_upper:
+        upper_limit_value = st.number_input( # Ô nhập giá trị Upper Limit
+            "Upper Truncation Limit (Value)",
+            min_value=float(values.min()),
+            max_value=float(values.max()),
+            value=default_upper_value
+        )
+        upper_limit_percentile = st.text_input( # Ô hiển thị/nhập percentile Upper Limit
+            "Upper Truncation Limit (Percentile)",
+            value=f"{default_upper_percentile:.2f}", # Hiển thị percentile mặc định
+        )
 
-        # --------------------------------------------------------------------------------
-        # 6.5) HIỂN THỊ BẢNG THÔNG TIN THAM SỐ
-        # --------------------------------------------------------------------------------
-        param_data = {
-            "Mean (Custom)": [mean_custom],
-            "Block Size": [block_size],
-            "Weighting Factor (λ)": [lambda_factor],
-            "UCL": [custom_ucl],
-            "LCL": [custom_lcl],
-            "Z Value": [z_value if (approach == "Confidence Interval") else None]
-        }
-        df_param = pd.DataFrame(param_data)
+    # Cập nhật lower_limit và upper_limit từ giá trị người dùng nhập
+    lower_limit = lower_limit_value
+    upper_limit = upper_limit_value
 
-        st.subheader("EWMA Parameter Table")
-        st.table(df_param)
+    # **Xử lý khi giá trị Percentile thay đổi**: (Cần chuyển đổi từ percentile sang value nếu người dùng nhập trực tiếp percentile)
+    try:
+        lower_percentile_input_val = float(lower_limit_percentile)
+        if 0 <= lower_percentile_input_val <= 100: # Kiểm tra percentile hợp lệ
+            lower_limit = float(np.percentile(values, lower_percentile_input_val))
+            # **Cập nhật lại ô giá trị** để đồng bộ (tùy chọn, nếu muốn hiển thị giá trị tương ứng khi đổi percentile)
+            lower_limit_value = lower_limit # Cập nhật giá trị để hiển thị đúng trên ô number_input
+    except ValueError:
+        st.warning("Please enter a valid number for Lower Percentile.") # Xử lý nếu percentile nhập không hợp lệ
 
-        # --------------------------------------------------------------------------------
-        # (7) HIỂN THỊ OUT-OF-CONTROL
-        # --------------------------------------------------------------------------------
-        st.metric(label="Total Out-of-Control Points", value=len(out_of_control_points))
+    try:
+        upper_percentile_input_val = float(upper_limit_percentile)
+        if 0 <= upper_percentile_input_val <= 100: # Kiểm tra percentile hợp lệ
+            upper_limit = float(np.percentile(values, upper_percentile_input_val))
+            # **Cập nhật lại ô giá trị** để đồng bộ (tùy chọn)
+            upper_limit_value = upper_limit # Cập nhật giá trị để hiển thị đúng trên ô number_input
+    except ValueError:
+        st.warning("Please enter a valid number for Upper Percentile.") # Xử lý nếu percentile nhập không hợp lệ
 
-        show_table = st.checkbox("Show Out-of-Control Points", value=False)
-        if show_table:
-            if out_of_control_points:
-                st.subheader("Out-of-Control Points")
-                out_of_control_df = pd.DataFrame(out_of_control_points, columns=[x_label, "EWMA Value"])
-                st.table(out_of_control_df)
-            else:
-                st.info("No out-of-control points detected.")
+
+    # Tạo hai histogram: Original và Truncated
+    # Histogram 1: Dữ liệu gốc (Original)
+    fig_original = px.histogram(
+        x=values,
+        nbins=50,
+        title="Original Data",
+        labels={"x": "Values", "y": "Count"},
+        template="plotly_dark"
+    )
+
+    # Histogram 2: Dữ liệu đã truncate
+    truncated_values = values[(values >= lower_limit) & (values <= upper_limit)]
+    fig_truncated = px.histogram(
+        x=truncated_values,
+        nbins=50,
+        title="Truncated Data",
+        labels={"x": "Values", "y": "Count"},
+        template="plotly_dark"
+    )
+    # Thêm vline cho histogram truncated
+    fig_truncated.add_vline(
+        x=lower_limit,
+        line_dash="dash",
+        line_color="red",
+        annotation_text="Lower Limit",
+        annotation_position="bottom right"
+    )
+    fig_truncated.add_vline(
+        x=upper_limit,
+        line_dash="dash",
+        line_color="green",
+        annotation_text="Upper Limit",
+        annotation_position="top left"
+    )
+
+    # Dùng layout cột để đặt 2 biểu đồ cạnh nhau
+    col1, col2 = st.columns(2)
+    with col1:
+        st.plotly_chart(fig_original, use_container_width=True)
+    with col2:
+        st.plotly_chart(fig_truncated, use_container_width=True)
+
+    # 3) TÍNH LẠI MEAN VÀ SD DỰA TRÊN DỮ LIỆU ĐÃ TRUNCATE + CHO PHÉP USER TÙY CHỈNH
+    st.subheader("Enter Custom Mean/Target and Standard Deviation (after truncation)")
+
+    # Tự động tính dựa trên truncated_values
+    default_mean = float(np.mean(truncated_values))
+    default_std = float(np.std(truncated_values))
+
+    # Người dùng có thể điều chỉnh
+    mean_custom = st.number_input("Mean (Target)", value=default_mean)
+    std_dev_custom = st.number_input("Standard Deviation", value=default_std)
+
+    # Tính sample std (ddof=1) để hiển thị
+    sample_std = np.std(truncated_values, ddof=1)
+    st.write(f"**Sample Standard Deviation (ddof=1) from truncated data**: {sample_std:.4f}")
+
+    # 4) TÙY CHỌN VẼ EWMA
+    st.sidebar.header("EWMA Approach")
+    ewma_option = st.sidebar.radio("Choose EWMA Approach", ("Block-based", "Lambda-based"))
+
+    block_size = st.sidebar.number_input("Block Size", min_value=1, value=100)
+    lambda_factor = st.sidebar.slider("Weighting Factor (λ)", 0.01, 1.0, 0.1, 0.01)
+
+    st.sidebar.header("Control Limit Approach")
+    approach = st.sidebar.radio("Choose Control Limit Approach", ("Manual", "Confidence Interval"))
+
+    # Dùng mean_custom, std_dev_custom để tính UCL, LCL tùy thuộc option
+    if approach == "Manual":
+        ucl_input = st.sidebar.number_input("Upper Control Limit (UCL)",
+                 value=mean_custom + 2.0 * std_dev_custom)
+        lcl_input = st.sidebar.number_input("Lower Control Limit (LCL)",
+                 value=mean_custom - 2.0 * std_dev_custom)
+        custom_ucl = ucl_input
+        custom_lcl = lcl_input
+        z_value = None
     else:
-        st.warning("Selected column contains no data after cleaning. Please select another column or upload a different file.")
+        z_value = st.sidebar.slider("Z Value", 1.0, 5.0, 3.0, 0.1)
+        custom_ucl = mean_custom + z_value * std_dev_custom
+        custom_lcl = mean_custom - z_value * std_dev_custom
+
+    # --------------------------------------------------------------------------------
+    # (5) TẠO DỮ LIỆU THEO EWMA OPTION
+    # --------------------------------------------------------------------------------
+    if ewma_option == "Block-based":
+        data_for_ewma = chunk_data_and_average(truncated_values, block_size)
+        x_label = "Block Index"
+    else:
+        data_for_ewma = truncated_values
+        x_label = "Data Point"
+
+    ewma_values = calculate_ewma(data_for_ewma, lambda_factor)
+
+    # Xác định Out-of-control
+    out_of_control_points = []
+    for i, val in enumerate(ewma_values):
+        if val > custom_ucl or val < custom_lcl:
+            out_of_control_points.append((i, val))
+
+    # --------------------------------------------------------------------------------
+    # (6) VẼ BIỂU ĐỒ EWMA
+    # --------------------------------------------------------------------------------
+    fig_ewma = go.Figure()
+
+    fig_ewma.add_trace(go.Scatter(
+        x=np.arange(len(ewma_values)),
+        y=ewma_values,
+        mode='lines',
+        name='EWMA',
+        line=dict(color='blue')
+    ))
+    if out_of_control_points:
+        idx_ooc, val_ooc = zip(*out_of_control_points)
+        fig_ewma.add_trace(go.Scatter(
+            x=idx_ooc,
+            y=val_ooc,
+            mode='markers',
+            name='Out of Control',
+            marker=dict(color='red', size=8)
+        ))
+
+    fig_ewma.add_hline(y=mean_custom, line_dash="dot", line_color="yellow", name="Mean")
+    fig_ewma.add_hline(y=custom_ucl, line_dash="dash", line_color="red", name="UCL")
+    fig_ewma.add_hline(y=custom_lcl, line_dash="dash", line_color="blue", name="LCL")
+
+    title_chart = "EWMA Chart - " + ewma_option
+    fig_ewma.update_layout(
+        title=title_chart,
+        xaxis_title=x_label,
+        yaxis_title="EWMA Value",
+        template="plotly_dark",
+        legend=dict(yanchor="top", y=1, xanchor="left", x=1.02)
+    )
+
+    # Annotation
+    annotation_list = [
+        f"Mean: {mean_custom:.2f}",
+        f"Block Size: {block_size}",
+        f"λ: {lambda_factor}",
+        f"UCL: {custom_ucl:.2f}",
+        f"LCL: {custom_lcl:.2f}",
+    ]
+    if approach == "Confidence Interval" and z_value is not None:
+        annotation_list.append(f"z: {z_value}")
+
+    annotation_text = "<br>".join(annotation_list)
+    fig_ewma.add_annotation(
+        x=1.02,
+        y=0.85,
+        xref="paper",
+        yref="paper",
+        text=annotation_text,
+        showarrow=False,
+        align="left",
+        xanchor="left",
+        yanchor="top",
+        font=dict(size=12, color="white")
+    )
+
+    # Hiển thị chart
+    st.plotly_chart(fig_ewma, use_container_width=True)
+
+    # --------------------------------------------------------------------------------
+    # 6.5) HIỂN THỊ BẢNG THÔNG TIN THAM SỐ
+    # --------------------------------------------------------------------------------
+    param_data = {
+        "Mean (Custom)": [mean_custom],
+        "Block Size": [block_size],
+        "Weighting Factor (λ)": [lambda_factor],
+        "UCL": [custom_ucl],
+        "LCL": [custom_lcl],
+        "Z Value": [z_value if (approach == "Confidence Interval") else None]
+    }
+    df_param = pd.DataFrame(param_data)
+
+    st.subheader("EWMA Parameter Table")
+    st.table(df_param)
+
+    # --------------------------------------------------------------------------------
+    # (7) HIỂN THỊ OUT-OF-CONTROL
+    # --------------------------------------------------------------------------------
+    st.metric(label="Total Out-of-Control Points", value=len(out_of_control_points))
+
+    show_table = st.checkbox("Show Out-of-Control Points", value=False)
+    if show_table:
+        if out_of_control_points:
+            st.subheader("Out-of-Control Points")
+            out_of_control_df = pd.DataFrame(out_of_control_points, columns=[x_label, "EWMA Value"])
+            st.table(out_of_control_df)
+        else:
+            st.info("No out-of-control points detected.")
 
 else:
     st.warning("Please upload a file to proceed.")
